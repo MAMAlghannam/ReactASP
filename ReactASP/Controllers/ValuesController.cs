@@ -90,6 +90,21 @@ namespace ReactASP.Controllers
                 "18:00 - 19:00",
             };
 
+            List<BookdSlot> bookedSlotsForThisDate;
+            bool isDateExists = bookedSlots.TryGetValue(date, out bookedSlotsForThisDate);
+
+            if (isDateExists)
+            {
+                for(int i = 0; i < bookedSlotsForThisDate.Count; i++)
+                {
+                    int indexOfBookedSlot = slots.FindIndex(slot => (string) slot == bookedSlotsForThisDate[i].At);
+                    if(indexOfBookedSlot != -1)
+                    {
+                        slots.RemoveAt(indexOfBookedSlot);
+                    }
+                }
+            }
+
             return Ok(new { slots, bookedSlots });
         }
 
@@ -107,7 +122,6 @@ namespace ReactASP.Controllers
                     bookedSlots[bookInfo.Date].Add(new BookdSlot() { At = bookInfo.Slot, UserName = HttpContext.User.Identity.Name });
                 else
                     return Ok(new { isBooked = false });
-                
             }
             else
             {
