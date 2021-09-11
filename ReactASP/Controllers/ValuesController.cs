@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using ReactASP.Model;
 using ReactASP.Model.Auth;
@@ -18,7 +19,14 @@ namespace ReactASP.Controllers
     public class ValuesController : ControllerBase
     {
 
-        public static Dictionary<string, List<BookdSlot>> bookedSlots = new Dictionary<string, List<BookdSlot>>();
+        public static Dictionary<string, List<BookdTime>> bookedTimes = new Dictionary<string, List<BookdTime>>();
+
+        public static List<User> Users = new List<User>()
+            {
+                new User() { Email = "Moh", Password = "123" },
+                new User() { Email = "Ahmed", Password = "123" },
+                new User() { Email = "Ali", Password = "123" }
+            };
 
         // GET: api/<ValuesController>
         [HttpGet]
@@ -53,82 +61,175 @@ namespace ReactASP.Controllers
         }
 
         [AllowAnonymous]
+        [HttpPost("getCookies")]
+        public ActionResult GetCookies()
+        {
+            return Ok(new { Cookies = Request.Cookies, HttpContext.User.Identities });
+        }
+
+
+        [AllowAnonymous]
         [HttpPost("getCredentials")]
         public ActionResult GetCredentials([FromBody] LoginModel loginModel)
         {
-            if(loginModel.Email == "Moh" && loginModel.Password == "123")
+            User userInfo = Users.Find(user => loginModel.Email == user.Email);
+
+            if (userInfo != null && userInfo.Password == loginModel.Password)
             {
-                var tokenAsBytes = Encoding.UTF8.GetBytes("Moh:123");
-                return Ok(Convert.ToBase64String(tokenAsBytes));
+                var tokenAsBytes = Encoding.UTF8.GetBytes(userInfo.Email+":"+userInfo.Password);
+                string token = Convert.ToBase64String(tokenAsBytes);
+                Response.Cookies.Append("XMyCustomToken", token, new CookieOptions() { Expires = DateTime.Now.AddMinutes(15), HttpOnly = true, SameSite = SameSiteMode.Strict });
+                return Ok(new { email = userInfo.Email, token });
             }
 
             return Unauthorized();
         }
 
-        [HttpGet("getBookedSlots/{date}")]
-        public ActionResult GetBookedSlots(string date)
+        [HttpGet("getBookedTimes/{date}")]
+        public ActionResult GetBookedTimes(string date)
         {
-            return Ok(new { bookedSlots });
+            return Ok(new { bookedTimes });
         }
 
-        [HttpGet("getAvailableSlots/{date}")]
-        public ActionResult GetAvailableSlots(string date)
+        [HttpGet("getTimes/{date}")]
+        public ActionResult GetTimes(string date)
         {
-            List<object> slots = new List<object>()
+            string[] yyyyMmDd = date.Split("-");
+            DateTime dateQueried = new DateTime(int.Parse(yyyyMmDd[0]), int.Parse(yyyyMmDd[1]), int.Parse(yyyyMmDd[2]));
+
+            // if the dateQueried is passed return an empty array
+            if (dateQueried.CompareTo(DateTime.Today) < 0)
+                return Ok(new { times = Array.Empty<Time>() });
+
+            List<Time> times = new List<Time>()
             {
-                "07:00 - 08:00",
-                "08:00 - 09:00",
-                "09:00 - 10:00",
-                "10:00 - 11:00",
-                "11:00 - 12:00",
-                "12:00 - 13:00",
-                "13:00 - 14:00",
-                "14:00 - 15:00",
-                "15:00 - 16:00",
-                "16:00 - 17:00",
-                "17:00 - 18:00",
-                "18:00 - 19:00",
+                new Time() { At = "07:00 - 08:00" },
+                new Time() { At = "08:00 - 09:00" },
+                new Time() { At = "09:00 - 10:00" },
+                new Time() { At = "10:00 - 11:00" },
+                new Time() { At = "11:00 - 12:00" },
+                new Time() { At = "12:00 - 13:00" },
+                new Time() { At = "13:00 - 14:00" },
+                new Time() { At = "14:00 - 15:00" },
+                new Time() { At = "15:00 - 16:00" },
+                new Time() { At = "16:00 - 17:00" },
+                new Time() { At = "17:00 - 18:00" },
+                new Time() { At = "18:00 - 19:00" },
             };
 
-            List<BookdSlot> bookedSlotsForThisDate;
-            bool isDateExists = bookedSlots.TryGetValue(date, out bookedSlotsForThisDate);
+            // if the dateQueried is same as this date filter times
+            if (dateQueried.Date.CompareTo(DateTime.Now.Date) == 0)
+                times = times.FindAll(item => DateTime.Parse(item.At.Split(" - ")[0]).Hour > DateTime.Now.Hour );
+
+            List<BookdTime> bookedTimesForThisDate;
+            bool isDateExists = bookedTimes.TryGetValue(date, out bookedTimesForThisDate);
 
             if (isDateExists)
             {
-                for(int i = 0; i < bookedSlotsForThisDate.Count; i++)
+                for (int i = 0; i < bookedTimesForThisDate.Count; i++)
                 {
-                    int indexOfBookedSlot = slots.FindIndex(slot => (string) slot == bookedSlotsForThisDate[i].At);
-                    if(indexOfBookedSlot != -1)
+                    int indexOfBookedTime = times.FindIndex(time => time.At == bookedTimesForThisDate[i].At);
+                    if (indexOfBookedTime != -1)
                     {
-                        slots.RemoveAt(indexOfBookedSlot);
+                        times[indexOfBookedTime].IsBooked = true;
+                        times[indexOfBookedTime].UserName = bookedTimesForThisDate[i].UserName;
                     }
                 }
             }
 
-            return Ok(new { slots, bookedSlots });
+            return Ok(new { times });
         }
 
         [HttpPost("book")]
         public ActionResult Book([FromBody] BookInformation bookInfo)
         {
-            List<BookdSlot> bookedSlotsForThisDate;
-            bool isDateExists = bookedSlots.TryGetValue(bookInfo.Date, out bookedSlotsForThisDate);
+            string[] yyyyMmDd = bookInfo.Date.Split("-");
+            DateTime dateQueried = new DateTime(int.Parse(yyyyMmDd[0]), int.Parse(yyyyMmDd[1]), int.Parse(yyyyMmDd[2]));
+
+            // if the dateQueried is passed it's not allowed to book
+            if (dateQueried.CompareTo(DateTime.Today) < 0)
+                return Ok(new { isBooked = false, reason = "passed-day" });
+
+            List<BookdTime> bookedTimesForThisDate;
+            bool isDateExists = bookedTimes.TryGetValue(bookInfo.Date, out bookedTimesForThisDate);
 
             if (isDateExists)
             {
-                BookdSlot valueAtThisSlot = bookedSlotsForThisDate.Find(book => book.At == bookInfo.Slot );
+                BookdTime valueAtThisTime = bookedTimesForThisDate.Find(book => book.At == bookInfo.Time );
 
-                if(valueAtThisSlot == null)
-                    bookedSlots[bookInfo.Date].Add(new BookdSlot() { At = bookInfo.Slot, UserName = HttpContext.User.Identity.Name });
+                if(FindListOfBookingsByDate(bookInfo.Date, HttpContext.User.Identity.Name).Count >= 2)
+                {
+                    return Ok(new { isBooked = false, reason = "exceeded-bookings" });
+                }
+                else if(valueAtThisTime != null)
+                {
+                    return Ok(new { isBooked = false, reason = "not-available" });
+                }
                 else
-                    return Ok(new { isBooked = false });
+                {
+                    bookedTimes[bookInfo.Date].Add(new BookdTime() { At = bookInfo.Time, UserName = HttpContext.User.Identity.Name });
+                }
             }
             else
             {
-                bookedSlots.Add(bookInfo.Date, new List<BookdSlot>() { new BookdSlot() { At = bookInfo.Slot, UserName = HttpContext.User.Identity.Name } });
+                bookedTimes.Add(bookInfo.Date, new List<BookdTime>() { new BookdTime() { At = bookInfo.Time, UserName = HttpContext.User.Identity.Name } });
             }
 
-            return Ok(new { isBooked = true, bookedAt = bookInfo.Slot });
+            return Ok(new { isBooked = true, bookedAt = bookInfo.Time });
         }
+
+        [HttpPost("cancelBook")]
+        public ActionResult CancelBook([FromBody] BookInformation bookInfo)
+        {
+            List<BookdTime> bookedTimesForThisDate;
+            bool isDateExists = bookedTimes.TryGetValue(bookInfo.Date, out bookedTimesForThisDate);
+
+            if (isDateExists)
+            {
+                int indexAtThisTime = bookedTimesForThisDate.FindIndex(book => book.At == bookInfo.Time);
+
+                if (indexAtThisTime != -1)
+                {
+                    bookedTimes[bookInfo.Date].RemoveAt(indexAtThisTime);
+                    return Ok(new { isCanceled = true });
+                }
+                else
+                    return BadRequest(new { isCanceled = false });
+            }
+
+            return BadRequest(new { isCanceled = false, bookedAt = bookInfo.Time });
+        }
+
+        [HttpGet("getMyListOfBookings")]
+        public ActionResult GetMyListOfBookings()
+        {
+            string username = HttpContext.User.Identity.Name;
+            List<object> listOfBookings = new List<object>();
+            for (int i = 0; i < bookedTimes.Keys.Count; i++)
+            {
+                string currentDate = bookedTimes.Keys.ToList()[i];
+                List<object> itemsFound = FindListOfBookingsByDate(currentDate, username);
+                if (itemsFound.Count > 0)
+                    itemsFound.ForEach(item => listOfBookings.Add(item));
+            }
+
+            return Ok(new { listOfBookings });
+
+        }
+
+        private List<object> FindListOfBookingsByDate(string date, string username)
+        {
+            List<object> listOfBookings = new List<object>();
+            for (int j = 0; j < bookedTimes[date].Count; j++)
+            {
+                if (bookedTimes[date][j].UserName == username)
+                {
+                    listOfBookings.Add(new { date = date, time = bookedTimes[date][j].At });
+                }
+            }
+
+            return listOfBookings;
+        }
+
     }
 }

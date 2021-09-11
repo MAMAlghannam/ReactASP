@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 
 namespace ReactASP.Model
 {
-    public class BookdSlot
+    public class BookdTime
     {
         public string At { get; set; }
         public string UserName { get; set; }

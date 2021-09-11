@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ReactASP.Controllers;
+using ReactASP.Model.Auth;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -41,18 +43,21 @@ namespace ReactASP.Handlers
             
             try
             {
-                // the Authorization header will came encrypted in forms of Base64 string 
+
+                // the Authorization header will came encrypted in form of Base64 string 
                 var authHeader = AuthenticationHeaderValue.Parse(Request.Headers["Authorization"]);
                 var credentialBytes = Convert.FromBase64String(authHeader.Parameter);
                 var credentials = Encoding.UTF8.GetString(credentialBytes).Split(new[] { ':' }, 2);
                 var username = credentials[0];
                 var password = credentials[1];
 
-                if (username == "Moh" && password == "123")
+                User userInfo = ValuesController.Users.Find(user => user.Email == username);
+
+                if (userInfo != null && userInfo.Password == password)
                 {
                     var claims = new[] {
-                        new Claim(ClaimTypes.NameIdentifier, "UserID_Moh"),
-                        new Claim(ClaimTypes.Name, "Moh"),
+                        new Claim(ClaimTypes.NameIdentifier, "UserID_ItsAnEmail"),
+                        new Claim(ClaimTypes.Name, userInfo.Email),
                     };
                     var identity = new ClaimsIdentity(claims, Scheme.Name);
                     var principal = new ClaimsPrincipal(identity);
